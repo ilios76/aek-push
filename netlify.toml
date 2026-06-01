@@ -1,3 +1,7 @@
+[build]
+command = "npm install"
+publish = "."
+
 [[scheduled]]
 cron = "30 8 * * *"
 command = "node index.js"
