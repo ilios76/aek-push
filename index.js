@@ -10,11 +10,12 @@ admin.initializeApp({
 
 const DEVICE_TOKEN = process.env.DEVICE_TOKEN;
 
-async function sendPush() {
+exports.handler = async () => {
   try {
     const feed = await parser.parseURL(
       "https://news.google.com/rss/search?q=AEK&hl=el&gl=GR&ceid=GR:el"
     );
+
     const latest = feed.items[0];
 
     const message = {
@@ -27,9 +28,18 @@ async function sendPush() {
 
     const response = await admin.messaging().send(message);
     console.log("Push sent:", response);
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ ok: true, title: latest.title })
+    };
+
   } catch (error) {
     console.error("Error sending push:", error);
-  }
-}
 
-sendPush();
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message })
+    };
+  }
+};
