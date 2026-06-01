@@ -4,16 +4,16 @@ publish = "."
 
 [[scheduled]]
 cron = "30 8 * * *"
-command = "netlify/functions/push.js"
+command = "push"
 
 [[scheduled]]
 cron = "0 12 * * *"
-command = "netlify/functions/push.js"
+command = "push"
 
 [[scheduled]]
 cron = "0 17 * * *"
-command = "netlify/functions/push.js"
+command = "push"
 
 [[scheduled]]
 cron = "15 21 * * *"
-command = "netlify/functions/push.js"
+command = "push"
