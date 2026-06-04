@@ -1,8 +1,8 @@
 const fetch = require("node-fetch");
 
 exports.handler = async () => {
-  const appId = process.env.ONESIGNAL_APP_ID;
-  const apiKey = process.env.ONESIGNAL_API_KEY;
+  const appId = "0ab1df18-21ed-46ce-9440-b3e908b16eae";
+  const apiKey = "os_v2_org_bky56gbb5vdm5fcawpuqrmlovzmrrjvexhyewqnugvhljrzvjpj5waesjgqs5nlbkk4tbhy43miscyoil5gubvij4r3qarrn5dukcfi";
 
   const response = await fetch("https://api.onesignal.com/notifications", {
     method: "POST",
