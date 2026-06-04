@@ -17,10 +17,10 @@ exports.handler = async () => {
 
     const message = {
       message: {
-        token: "ΤΟ_FCM_DEVICE_TOKEN_ΣΟΥ",
+        token: "eS3wOJDYS3mOLnwV5j3upl:APA91bEC06CyYguHXvCN_utgi-l0D5w_WoaqBtiI2BZNqONgQRGPdwpjCLiw224wP0w_1QotPsHfxunKwWI46K0MRWF3MFjBIaRTaF2OmgOJ_KZrCFLpvvs",
         notification: {
           title: "AEK Corner",
-          body: "Goal από FCM!"
+          body: "🔥 Goal από FCM! Δουλεύει ξανά!"
         }
       }
     };
