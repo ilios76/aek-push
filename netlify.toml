@@ -15,7 +15,7 @@ cron = "0 12 * * *"
 command = "node index.js"
 
 [[scheduled]]
-cron = "0 17 * * *"
+cron = "42 18 * * *"
 command = "node index.js"
 
 [[scheduled]]
