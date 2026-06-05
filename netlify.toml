@@ -1,23 +1,23 @@
 [build]
-command = "npm install"
-publish = "."
+  command = "npm install"
+  publish = "."
 
 [functions]
-directory = "netlify/functions"
-node_bundler = "esbuild"
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
 
 [[scheduled]]
-cron = "30 8 * * *"
-command = "node index.js"
+  cron = "30 8 * * *"
+  command = "node index.js"
 
 [[scheduled]]
-cron = "0 12 * * *"
-command = "node index.js"
+  cron = "0 12 * * *"
+  command = "node index.js"
 
 [[scheduled]]
-cron = "42 18 * * *"
-command = "node index.js"
+  cron = "42 19 * * *"
+  command = "node index.js"
 
 [[scheduled]]
-cron = "15 21 * * *"
-command = "node index.js"
+  cron = "15 21 * * *"
+  command = "node index.js"
