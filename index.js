@@ -1,45 +1,40 @@
-const admin = require("firebase-admin");
-const Parser = require("rss-parser");
-const parser = new Parser();
+import fetch from "node-fetch";
+import { XMLParser } from "fast-xml-parser";
 
-const serviceAccount = JSON.parse(process.env.SERVICE_ACCOUNT);
+const RSS_URL =
+  "https://news.google.com/rss/search?q=ΑΕΚ&hl=el&gl=GR&ceid=GR:el";
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
-
-const DEVICE_TOKEN = process.env.DEVICE_TOKEN;
-
-exports.handler = async () => {
+export default async () => {
   try {
-    const feed = await parser.parseURL(
-      "https://news.google.com/rss/search?q=AEK&hl=el&gl=GR&ceid=GR:el"
+    // 1) Fetch RSS
+    const rssResponse = await fetch(RSS_URL);
+    const rssText = await rssResponse.text();
+
+    // 2) Parse XML
+    const parser = new XMLParser();
+    const rss = parser.parse(rssText);
+
+    // 3) Πάρε το πρώτο άρθρο
+    const firstItem = rss.rss.channel.item[0];
+
+    const title = firstItem.title || "AEK Corner";
+    const description = firstItem.description || "Νέο άρθρο για την ΑΕΚ!";
+
+    // 4) Στείλε push στο Netlify function
+    await fetch(
+      "https://superb-pie-79e20a.netlify.app/.netlify/functions/push",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title,
+          body: description,
+        }),
+      }
     );
 
-    const latest = feed.items[0];
-
-    const message = {
-      token: DEVICE_TOKEN,
-      notification: {
-        title: "AEK Corner",
-        body: latest.title
-      }
-    };
-
-    const response = await admin.messaging().send(message);
-    console.log("Push sent:", response);
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ ok: true, title: latest.title })
-    };
-
-  } catch (error) {
-    console.error("Error sending push:", error);
-
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: error.message })
-    };
+    console.log("Push sent:", title);
+  } catch (err) {
+    console.error("RSS error:", err);
   }
 };
