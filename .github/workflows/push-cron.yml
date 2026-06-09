@@ -1,0 +1,17 @@
+name: Push Notifications Cron
+
+on:
+  schedule:
+    - cron: "30 8 * * *"    # 08:30
+    - cron: "0 12 * * *"    # 12:00
+    - cron: "42 18 * * *"   # 18:42
+    - cron: "15 21 * * *"   # 21:15
+  workflow_dispatch:
+
+jobs:
+  trigger-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Netlify Function
+        run: |
+          curl -X GET "https://superb-pie-79e20a.netlify.app/.netlify/functions/push"
