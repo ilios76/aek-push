@@ -9,9 +9,10 @@ exports.handler = async () => {
     const serviceAccount = JSON.parse(process.env.FCM_SERVICE_ACCOUNT);
 
     // 2. Load Google News RSS feed
-    const feed = await parser.parseURL(
-      "https://news.google.com/rss/search?q=ΑΕΚ&hl=el&gl=GR&ceid=GR:el"
-    );
+   const feed = await parser.parseURL(
+  "https://news.google.com/rss/search?q=%CE%91%CE%95%CE%9A&hl=el&gl=GR&ceid=GR:el"
+);
+
 
     if (!feed.items || feed.items.length === 0) {
       return {
