@@ -10,8 +10,9 @@ exports.handler = async () => {
 
     // 2. Load Google News RSS feed
   const feed = await parser.parseURL(
-  "https://news.google.com/rss/search?q=%CE%91%CE%95%CE%9A&hl=el&gl=GR&ceid=GR:el"
+  "https://news.google.com/rss/search?q=%CE%91%CE%95%CE%9C&hl=el&gl=GR&ceid=GR:el&t=" + Date.now()
 );
+
 
 
 
