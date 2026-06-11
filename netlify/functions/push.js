@@ -8,17 +8,19 @@ exports.handler = async () => {
     // 1. Load service account
     const serviceAccount = JSON.parse(process.env.FCM_SERVICE_ACCOUNT);
 
-    // 2. Load Google News RSS feed
-  const feed = await parser.parseURL(
-  "https://news.google.com/rss/search?q=%CE%91%CE%95%CE%9C&hl=el&gl=GR&ceid=GR:el&t=" + Date.now()
-);
-
-
-
+    // 2. Load Google News RSS feed (with cache-buster)
+    const feed = await parser.parseURL(
+      "https://news.google.com/rss/search?q=%CE%91%CE%95%CE%9A&hl=el&gl=GR&ceid=GR:el&t=" + Date.now()
+    );
 
     if (!feed.items || feed.items.length === 0) {
       return {
         statusCode: 200,
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache",
+          "Expires": "0"
+        },
         body: "No RSS items found"
       };
     }
@@ -100,11 +102,21 @@ exports.handler = async () => {
 
     return {
       statusCode: 200,
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0"
+      },
       body: JSON.stringify(result)
     };
   } catch (err) {
     return {
       statusCode: 500,
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0"
+      },
       body: JSON.stringify({ error: err.message })
     };
   }
