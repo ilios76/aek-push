@@ -1,16 +1,11 @@
 name: Push Notifications Cron
 
 on:
-  schedule:
-    - cron: "20 4 * * *"    # 07:20
-    - cron: "30 5 * * *"    # 08:30
-    - cron: "0 7 * * *"    # 10:00
-    - cron: "0 9 * * *"    # 12:00
-    - cron: "30 11 * * *"   # 14:30
-    - cron: "30 13 * * *"   # 16:30
-    - cron: "42 15 * * *"   # 18:42
-    - cron: "15 17 * * *"   # 20:15
-    - cron: "30 19 * * *"   # 22:30
+ schedule:
+  - cron: "0 6 * * *"     # 09:00 GR
+  - cron: "0 10 * * *"    # 13:00 GR
+  - cron: "0 14 * * *"    # 17:00 GR
+  - cron: "0 18 * * *"    # 21:00 GR
   workflow_dispatch:
 
 jobs:
