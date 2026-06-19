@@ -12,7 +12,6 @@ on:
   - cron: "0 18 * * *"    # 21:00 GR
   - cron: "0 20 * * *"    # 13:00 GR
   - cron: "0 00 * * *"    # 13:00 GR
-  - cron: "0 3 * * *"    # 13:00 GR
   workflow_dispatch:
 
 jobs:
