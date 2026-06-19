@@ -2,6 +2,7 @@ name: Push Notifications Cron
 
 on:
  schedule:
+  - cron: "0 2 * * *"     # 09:00 GR
   - cron: "0 6 * * *"     # 09:00 GR
   - cron: "0 8 * * *"    # 13:00 GR
   - cron: "0 10 * * *"    # 13:00 GR
