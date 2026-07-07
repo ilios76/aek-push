@@ -1,124 +1,71 @@
 const fetch = require("node-fetch");
 const Parser = require("rss-parser");
+const fs = require("fs");
+
 const parser = new Parser();
-const crypto = require("crypto");
+const lastFile = "/tmp/last.json";
 
 exports.handler = async () => {
   try {
-    // 1. Load service account
-    const serviceAccount = JSON.parse(process.env.FCM_SERVICE_ACCOUNT);
+    // Load last sent article
+    let last = { link: "", title: "" };
+    if (fs.existsSync(lastFile)) {
+      last = JSON.parse(fs.readFileSync(lastFile, "utf8"));
+    }
 
-    // 2. Load Google News RSS feed (with cache-buster)
+    // Normalize titles to avoid duplicates like (video), (photos), etc.
+    function normalizeTitle(t) {
+      return t
+        .toLowerCase()
+        .replace(/\(.*?\)/g, "")      // remove (video), (photos), etc
+        .replace(/&#\d+;/g, "")       // remove HTML entities
+        .replace(/\s+/g, " ")         // collapse spaces
+        .trim();
+    }
+
+    // Fetch your aggregated feed
     const feed = await parser.parseURL(
-  "https://url-to-rss-magic.lovable.app/api/public/aggregate?title=My+Aggregated+Feed&url=https%3A%2F%2Faek24hours.gr%2F%3Ffeed%3Drss2&url=https%3A%2F%2Fmonobala.gr%2Fcategory%2Fteams%2Fsl1%2Faek%2Ffeed%2F&url=https%3A%2F%2Fwww.aek1924.gr%2Fcategory%2Fpodosfairo%2Ffeed%2F&url=https%3A%2F%2Febasket.gr%2Fcontent%2F%CE%B11%2F%CE%B1%CE%B5%CE%BA%2Ffeed&url=https%3A%2F%2Fbasketa.gr%2Fcategory%2F%CF%8C%CE%BB%CE%B1-%CF%84%CE%B1-%CE%BD%CE%AD%CE%B1%2F%CE%BF%CE%BC%CE%AC%CE%B4%CE%B5%CF%82%2F%CE%B1%CE%B5%CE%BA%2Ffeed&url=https%3A%2F%2Fenwsi.gr%2Faek%2Fhandball%2Ffeed&url=https%3A%2F%2Faek1924.gr%2Fcategory%2Ferasitexniki%2Fhandball%2Ffeed&url=https%3A%2F%2Fonsports.gr%2Fomades%2Faek%3Fformat%3Dfeed%26type%3Drss&url=https%3A%2F%2Furl-to-rss-magic.lovable.app%2Fapi%2Fpublic%2Ffeed%2FaHR0cHM6Ly93d3cuc3BvcnQtZm0uZ3IvdGFnL2Flaw.xml&url=https%3A%2F%2Furl-to-rss-magic.lovable.app%2Fapi%2Fpublic%2Ffeed%2FaHR0cHM6Ly93d3cuZ2F6emV0dGEuZ3IvdGVhbXMvYWVr.xml&url=https%3A%2F%2Furl-to-rss-magic.lovable.app%2Fapi%2Fpublic%2Ffeed%2FaHR0cHM6Ly93d3cuc2RuYS5nci90ZWFtcy9hZWsvcG9kb3NmYWlybw.xml&url=https%3A%2F%2Furl-to-rss-magic.lovable.app%2Fapi%2Fpublic%2Ffeed%2FaHR0cHM6Ly93d3cuc3BvcnQyNC5nci90YWcvYWVrLw.xml&url=https%3A%2F%2Furl-to-rss-magic.lovable.app%2Fapi%2Fpublic%2Ffeed%2FaHR0cHM6Ly93d3cua2F0aGltZXJpbmkuZ3IvdGFnL2Flay8.xml&t=" + Date.now()
-);
-
+      "https://url-to-rss-magic.lovable.app/api/public/aggregate?title=My+Aggregated+Feed&url=https%3A%2F%2Faek24hours.gr%2F%3Ffeed%3Drss2&url=https%3A%2F%2Fmonobala.gr%2Fcategory%2Fteams%2Fsl1%2Faek%2Ffeed%2F&url=https%3A%2F%2Fwww.aek1924.gr%2Fcategory%2Fpodosfairo%2Ffeed%2F&url=https%3A%2F%2Febasket.gr%2Fcontent%2F%CE%B11%2F%CE%B1%CE%B5%CE%BA%2Ffeed&url=https%3A%2F%2Fbasketa.gr%2Fcategory%2F%CF%8C%CE%BB%CE%B1-%CF%84%CE%B1-%CE%BD%CE%AD%CE%B1%2F%CE%BF%CE%BC%CE%AC%CE%B4%CE%B5%CF%82%2F%CE%B1%CE%B5%CE%BA%2Ffeed&url=https%3A%2F%2Fenwsi.gr%2Faek%2Fhandball%2Ffeed&url=https%3A%2F%2Faek1924.gr%2Fcategory%2Ferasitexniki%2Fhandball%2Ffeed&url=https%3A%2F%2Fonsports.gr%2Fomades%2Faek%3Fformat%3Dfeed%26type%3Drss&url=https%3A%2F%2Furl-to-rss-magic.lovable.app%2Fapi%2Fpublic%2Ffeed%2FaHR0cHM6Ly93d3cuc3BvcnQtZm0uZ3IvdGFnL2Flaw.xml&url=https%3A%2F%2Furl-to-rss-magic.lovable.app%2Fapi%2Fpublic%2Ffeed%2FaHR0cHM6Ly93d3cuZ2F6emV0dGEuZ3IvdGVhbXMvYWVr.xml&url=https%3A%2F%2Furl-to-rss-magic.lovable.app%2Fapi%2Fpublic%2Ffeed%2FaHR0cHM6Ly93d3cuc2RuYS5nci90ZWFtcy9hZWsvcG9kb3NmYWlybw.xml&url=https%3A%2F%2Furl-to-rss-magic.lovable.app%2Fapi%2Fpublic%2Ffeed%2FaHR0cHM6Ly93d3cuc3BvcnQyNC5nci90YWcvYWVrLw.xml&url=https%3A%2F%2Furl-to-rss-magic.lovable.app%2Fapi%2Fpublic%2Ffeed%2FaHR0cHM6Ly93d3cua2F0aGltZXJpbmkuZ3IvdGFnL2Flay8.xml&t=" + Date.now()
+    );
 
     if (!feed.items || feed.items.length === 0) {
-      return {
-        statusCode: 200,
-        headers: {
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          "Pragma": "no-cache",
-          "Expires": "0"
-        },
-        body: "No RSS items found"
-      };
+      return { statusCode: 200, body: "No items in feed" };
     }
 
     const latest = feed.items[0];
-    const title = latest.title || "Νέο άρθρο για ΑΕΚ";
-    const link = latest.link || "";
+    const latestTitleNorm = normalizeTitle(latest.title);
+    const lastTitleNorm = normalizeTitle(last.title);
 
-    // 3. Create JWT for FCM
-    const jwtHeader = { alg: "RS256", typ: "JWT" };
-    const now = Math.floor(Date.now() / 1000);
-    const jwtClaim = {
-      iss: serviceAccount.client_email,
-      scope: "https://www.googleapis.com/auth/firebase.messaging",
-      aud: "https://oauth2.googleapis.com/token",
-      iat: now,
-      exp: now + 3600
-    };
+    // BLOCK duplicates by link OR normalized title
+    if (latest.link === last.link || latestTitleNorm === lastTitleNorm) {
+      return { statusCode: 200, body: "Duplicate blocked" };
+    }
 
-    const base64url = (str) =>
-      Buffer.from(str)
-        .toString("base64")
-        .replace(/=/g, "")
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_");
-
-    const encodedHeader = base64url(JSON.stringify(jwtHeader));
-    const encodedClaim = base64url(JSON.stringify(jwtClaim));
-
-    const signature = crypto
-      .createSign("RSA-SHA256")
-      .update(`${encodedHeader}.${encodedClaim}`)
-      .sign(serviceAccount.private_key, "base64")
-      .replace(/=/g, "")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_");
-
-    const jwt = `${encodedHeader}.${encodedClaim}.${signature}`;
-
-    // 4. Get access token
-    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+    // SEND PUSH
+    await fetch("https://onesignal.com/api/v1/notifications", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        Authorization: `Basic ${process.env.ONESIGNAL_API_KEY}`
+      },
+      body: JSON.stringify({
+        app_id: process.env.ONESIGNAL_APP_ID,
+        included_segments: ["All"],
+        headings: { en: "AEK Corner" },
+        contents: { en: latest.title },
+        url: latest.link
+      })
     });
 
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
-
-    // 5. Send push notification
-    const message = {
-      message: {
-        token: "eS3wOJDYS3mOLnwV5j3upl:APA91bEC06CyYguHXvCN_utgi-l0D5w_WoaqBtiI2BZNqONgQRGPdwpjCLiw224wP0w_1QotPsHfxunKwWI46K0MRWF3MFjBIaRTaF2OmgOJ_KZrCFLpvvs",
-        notification: {
-          title: "AEK Corner",
-          body: title
-        },
-        webpush: {
-          fcm_options: {
-            link: link
-          }
-        }
-      }
-    };
-
-    const fcmResponse = await fetch(
-      `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(message)
-      }
+    // Save new last item
+    fs.writeFileSync(
+      lastFile,
+      JSON.stringify({ link: latest.link, title: latest.title })
     );
 
-    const result = await fcmResponse.json();
+    return { statusCode: 200, body: "Push sent" };
 
-    return {
-      statusCode: 200,
-      headers: {
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        "Pragma": "no-cache",
-        "Expires": "0"
-      },
-      body: JSON.stringify(result)
-    };
   } catch (err) {
-    return {
-      statusCode: 500,
-      headers: {
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        "Pragma": "no-cache",
-        "Expires": "0"
-      },
-      body: JSON.stringify({ error: err.message })
-    };
+    return { statusCode: 500, body: "Error: " + err.toString() };
   }
 };
