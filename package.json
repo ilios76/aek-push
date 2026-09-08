@@ -10,8 +10,6 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
-  "dependencies": {
-    "firebase-admin": "^13.10.0",
-    "rss-parser": "^3.13.0"
+  "dependencies": { "firebase-admin": "^13.10.0", "rss-parser": "^3.13.0", "@netlify/functions": "^2.8.2", "@netlify/blobs": "^8.1.0
   }
 }
