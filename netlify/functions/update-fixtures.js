@@ -1,5 +1,15 @@
 const { schedule } = require("@netlify/functions");
-const { getStore } = require("@netlify/blobs");
+
+const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+async function upstashSet(key, value) {
+  await fetch(`${UPSTASH_URL}/set/${key}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+    body: JSON.stringify(value),
+  });
+}
 
 const handler = async () => {
   const API_KEY = process.env.API_FOOTBALL_KEY;
@@ -20,13 +30,11 @@ const handler = async () => {
     awayId: f.teams.away.id,
   }));
 
-  const store = getStore("aek-goals");
-  await store.setJSON("upcoming-fixtures", fixtures);
+  await upstashSet("aek-upcoming-fixtures", fixtures);
 
   console.log("Saved", fixtures.length, "upcoming fixtures");
 
   return { statusCode: 200 };
 };
 
-// Τρέχει κάθε μέρα στις 03:00 UTC (~06:00 ώρα Ελλάδας)
 module.exports.handler = schedule("0 3 * * *", handler);
