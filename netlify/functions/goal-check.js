@@ -1,5 +1,23 @@
 const { schedule } = require("@netlify/functions");
-const { getStore } = require("@netlify/blobs");
+
+const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+async function upstashGet(key) {
+  const res = await fetch(`${UPSTASH_URL}/get/${key}`, {
+    headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+  });
+  const json = await res.json();
+  return json.result ? JSON.parse(json.result) : null;
+}
+
+async function upstashSet(key, value) {
+  await fetch(`${UPSTASH_URL}/set/${key}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+    body: JSON.stringify(value),
+  });
+}
 
 function isWithinMatchWindow(kickoffIso) {
   const kickoff = new Date(kickoffIso).getTime();
@@ -12,9 +30,8 @@ function isWithinMatchWindow(kickoffIso) {
 const handler = async () => {
   const API_KEY = process.env.API_FOOTBALL_KEY;
   const TEAM_ID = Number(process.env.AEK_TEAM_ID);
-  const store = getStore("aek-goals");
 
-  const fixtures = (await store.get("upcoming-fixtures", { type: "json" })) || [];
+  const fixtures = (await upstashGet("aek-upcoming-fixtures")) || [];
   const live = fixtures.find((f) => isWithinMatchWindow(f.kickoff));
 
   if (!live) {
@@ -34,8 +51,8 @@ const handler = async () => {
   const aekGoals = isHome ? fixture.goals.home : fixture.goals.away;
   const opponent = isHome ? fixture.teams.away.name : fixture.teams.home.name;
 
-  const stateKey = `goal-state-${live.id}`;
-  const prevState = (await store.get(stateKey, { type: "json" })) || { aekGoals: 0 };
+  const stateKey = `aek-goal-state-${live.id}`;
+  const prevState = (await upstashGet(stateKey)) || { aekGoals: 0 };
 
   if (aekGoals > prevState.aekGoals) {
     const scoreLine = isHome
@@ -54,10 +71,9 @@ const handler = async () => {
     console.log("Goal push sent:", scoreLine);
   }
 
-  await store.setJSON(stateKey, { aekGoals });
+  await upstashSet(stateKey, { aekGoals });
 
   return { statusCode: 200 };
 };
 
-// Τρέχει κάθε 2 λεπτά — αλλά κάνει πραγματικό API call μόνο μέσα σε παράθυρο αγώνα
 module.exports.handler = schedule("*/2 * * * *", handler);
