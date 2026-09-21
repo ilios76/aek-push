@@ -5,7 +5,7 @@ const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const AEK_ESPN_ID = "887";
 
 // Διοργανώσεις που ελέγχουμε κάθε φορά (ESPN slugs)
-const LEAGUES = ["gre.1", "gre.cup", "uefa.champions"];
+const LEAGUES = ["gre.1", "gre.cup", "gre.greek_cup", "greece.cup", "uefa.champions"];
 
 async function upstashGet(key) {
   const res = await fetch(`${UPSTASH_URL}/get/${key}`, {
