@@ -74,7 +74,7 @@ exports.handler = async () => {
     // 5. Send push notification
     const message = {
       message: {
-        token: "eS3wOJDYS3mOLnwV5j3upl:APA91bEC06CyYguHXvCN_utgi-l0D5w_WoaqBtiI2BZNqONgQRGPdwpjCLiw224wP0w_1QotPsHfxunKwWI46K0MRWF3MFjBIaRTaF2OmgOJ_KZrCFLpvvs",
+        token: "eS3wOJDYS3mOLnwV5j3upl:APA91bEbRpEszwQiglRGlEu_WG0U7h9yC6SYFGcZKd_lNV-7SrBsvFHL0w8P_rVwS0AWn4l-eoWMHIaCCBty-bk-Yk1U7w59QqOMQJVD36RPVSA07V3FuaU",
         notification: {
           title: "AEK Corner",
           body: title
