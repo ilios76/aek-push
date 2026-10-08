@@ -5,7 +5,7 @@ const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 
 // Κάθε εγγραφή: sport (ESPN sport path) + candidate league slugs να δοκιμάσουμε + ετικέτα για το push
 const SPORTS_TO_CHECK = [
-  { sport: "basketball", leagues: ["gre.1"], label: "Μπάσκετ" },
+  { sport: "basketball", leagues: ["gre.1", "greece.1", "gre.a1", "greece.a1"], label: "Μπάσκετ" },
   // Volleyball/Handball: το ESPN πιθανότατα δεν τα καλύπτει καθόλου — αφήνονται
   // εδώ ως σχόλιο, θα τα ενεργοποιήσουμε αν βρεθεί δουλεύον slug στο μέλλον.
   // { sport: "volleyball", leagues: ["gre.1"], label: "Βόλεϊ" },
