@@ -36,15 +36,21 @@ async function upstashSet(key, value) {
 // (χρησιμοποιεί SET ... NX -> ατομική "κλείδωση" ώστε ταυτόχρονα/επικαλυπτόμενα
 // runs να μη στείλουν ποτέ το ίδιο γκολ δύο φορές, ό,τι κι αν συμβεί με το άλλο state)
 async function claimOnce(dedupKey) {
-  const res = await fetch(`${UPSTASH_URL}/set/${dedupKey}/1?NX=true&EX=21600`, {
+  // Ολόκληρη η εντολή σαν JSON array στο body (ο τεκμηριωμένος τρόπος του Upstash REST)
+  const res = await fetch(UPSTASH_URL, {
     method: "POST",
-    headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+    headers: {
+      Authorization: `Bearer ${UPSTASH_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(["SET", dedupKey, "1", "NX", "EX", 21600]),
   });
   const json = await res.json();
   if (json.error) {
-    console.error("Upstash claimOnce error:", json.error);
+    console.error("Upstash claimOnce ERROR:", json.error);
     return false;
   }
+  console.log("claimOnce", dedupKey, "->", json.result);
   return json.result === "OK"; // OK = το πήραμε πρώτοι εμείς· null = το είχε ήδη πάρει άλλο run
 }
 
