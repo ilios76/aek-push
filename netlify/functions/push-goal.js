@@ -1,7 +1,10 @@
 const crypto = require("crypto");
 
-// Αναδημιουργεί την ίδια λογική JWT/FCM του push.js, αλλά στέλνει το μήνυμα
-// που του δίνουμε (title/body) αντί να τραβάει το τελευταίο άρθρο RSS.
+// Στέλνει ένα custom μήνυμα (title/body) μέσω FCM στο topic "aek-news".
+// Είναι το ίδιο topic που χρησιμοποιεί το push.js, άρα το παίρνουν όλοι όσοι
+// είναι ήδη εγγεγραμμένοι στις ειδοποιήσεις της εφαρμογής.
+const TOPIC = "aek-news";
+
 exports.handler = async (event) => {
   try {
     const { title, body: messageBody } = JSON.parse(event.body || "{}");
@@ -13,10 +16,10 @@ exports.handler = async (event) => {
       };
     }
 
-    // 1. Load service account (ίδιο env var με το push.js)
+    // 1. Service account (ίδιο env var με το push.js)
     const serviceAccount = JSON.parse(process.env.FCM_SERVICE_ACCOUNT);
 
-    // 2. Create JWT for FCM
+    // 2. JWT για το FCM
     const jwtHeader = { alg: "RS256", typ: "JWT" };
     const now = Math.floor(Date.now() / 1000);
     const jwtClaim = {
@@ -47,7 +50,7 @@ exports.handler = async (event) => {
 
     const jwt = `${encodedHeader}.${encodedClaim}.${signature}`;
 
-    // 3. Get access token
+    // 3. Access token
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -55,19 +58,21 @@ exports.handler = async (event) => {
     });
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
+    if (!accessToken) {
+      throw new Error("Δεν δόθηκε access token: " + JSON.stringify(tokenData));
+    }
 
-    // 4. Send push notification — ίδιο test token με το push.js.
-    // ΣΗΜΕΙΩΣΗ: όταν περάσεις σε broadcast προς όλους τους χρήστες της app
-    // (μέσω FCM topic αντί για fixed token), θα χρειαστεί να αλλάξεις το
-    // "token" σε "topic" και εδώ και στο push.js.
+    // 4. Αποστολή push
     const message = {
       message: {
-        token:
-          "eS3wOJDYS3mOLnwV5j3upl:APA91bEC06CyYguHXvCN_utgi-l0D5w_WoaqBtiI2BZNqONgQRGPdwpjCLiw224wP0w_1QotPsHfxunKwWI46K0MRWF3MFjBIaRTaF2OmgOJ_KZrCFLpvvs",
+        topic: TOPIC,
         notification: {
           title: title,
           body: messageBody || "",
         },
+        // Τα γκολ είναι επείγοντα: υψηλή προτεραιότητα και λήξη μετά από 10 λεπτά,
+        // ώστε ένα γκολ να μην φτάσει ώρες αργότερα σε κινητό που ήταν εκτός δικτύου.
+        android: { priority: "HIGH", ttl: "600s" },
       },
     };
 
@@ -86,7 +91,8 @@ exports.handler = async (event) => {
     const result = await fcmResponse.json();
 
     return {
-      statusCode: 200,
+      // Αν το FCM απέρριψε το μήνυμα, το επιστρέφουμε ως σφάλμα (πριν γύριζε πάντα 200)
+      statusCode: fcmResponse.ok ? 200 : 502,
       headers: {
         "Cache-Control": "no-cache, no-store, must-revalidate",
       },
