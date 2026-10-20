@@ -54,12 +54,37 @@ async function claimOnce(dedupKey) {
   return json.result === "OK"; // OK = το πήραμε πρώτοι εμείς· null = το είχε ήδη πάρει άλλο run
 }
 
+// Επιστρέφει true ΜΟΝΟ αν το push-goal (και το FCM) δέχτηκε το μήνυμα
 async function sendGoalPush(title, body) {
-  await fetch("https://superb-pie-79e20a.netlify.app/.netlify/functions/push-goal", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, body }),
-  });
+  try {
+    const res = await fetch("https://superb-pie-79e20a.netlify.app/.netlify/functions/push-goal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, body }),
+    });
+    const text = await res.text();
+    console.log("push-goal response:", res.status, text.slice(0, 300));
+    return res.ok;
+  } catch (err) {
+    console.error("push-goal request failed:", err.message);
+    return false;
+  }
+}
+
+// Ελευθερώνει το "κλείδωμα" ενός γκολ, ώστε να ξαναδοκιμαστεί η αποστολή
+async function releaseClaim(dedupKey) {
+  try {
+    await fetch(UPSTASH_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${UPSTASH_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(["DEL", dedupKey]),
+    });
+  } catch (err) {
+    console.error("releaseClaim error:", err.message);
+  }
 }
 
 async function checkLeague(leagueSlug) {
@@ -106,7 +131,14 @@ async function checkLeague(leagueSlug) {
       const scoreLine = `${aekCompetitor.score}-${opponent.score}`;
       const clock = competition.status.displayClock;
       const opponentName = opponent.team.shortDisplayName || opponent.team.displayName;
-      await sendGoalPush("ΓΚΟΛ ΑΕΚ! ⚽🟡⚫", `ΑΕΚ ${scoreLine} ${opponentName} (${clock})`);
+      const ok = await sendGoalPush("ΓΚΟΛ ΑΕΚ! ⚽🟡⚫", `ΑΕΚ ${scoreLine} ${opponentName} (${clock})`);
+      if (!ok) {
+        // Δεν στάλθηκε: ελευθερώνουμε το κλείδωμα και ΔΕΝ ενημερώνουμε το state,
+        // ώστε το επόμενο run (σε 2 λεπτά) να ξαναδοκιμάσει το ίδιο γκολ.
+        console.error(`[${leagueSlug}] Goal push FAILED for goal #${g} — θα ξαναδοκιμάσει στο επόμενο run.`);
+        await releaseClaim(dedupKey);
+        return;
+      }
       console.log(`[${leagueSlug}] Goal push sent for goal #${g}:`, scoreLine);
     }
   }
