@@ -43,7 +43,7 @@ async function claimOnce(dedupKey) {
       Authorization: `Bearer ${UPSTASH_TOKEN}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(["SET", dedupKey, "1", "NX", "EX", 21600]),
+    body: JSON.stringify(["SET", dedupKey, "1", "NX", "EX", 900]), // 15 λεπτά
   });
   const json = await res.json();
   if (json.error) {
@@ -113,37 +113,70 @@ async function checkLeague(leagueSlug) {
   const aekCompetitor = competition.competitors.find((c) => c.team.id === AEK_ESPN_ID);
   const opponent = competition.competitors.find((c) => c.team.id !== AEK_ESPN_ID);
   const aekGoals = Number(aekCompetitor.score);
+  const oppGoals = Number(opponent.score);
+
+  if (!Number.isFinite(aekGoals) || !Number.isFinite(oppGoals)) {
+    console.log(`[${leagueSlug}] Το σκορ δεν είναι διαθέσιμο ακόμα, παραλείπεται.`);
+    return;
+  }
 
   const stateKey = `aek-goal-state-${aekEvent.id}`;
-  const prevState = (await upstashGet(stateKey)) || { aekGoals: 0 };
+  const saved = await upstashGet(stateKey);
+  // Πρώτο run του αγώνα: ξεκινάμε από 0-0. Αν υπάρχει state χωρίς "oppGoals"
+  // (π.χ. έγινε deploy στη μέση αγώνα), παίρνουμε ως αφετηρία το τρέχον σκορ του
+  // αντιπάλου, ώστε να μη σταλούν ξαφνικά ειδοποιήσεις για γκολ που έχουν ήδη πέσει.
+  const prevState = {
+    aekGoals: saved && Number.isFinite(saved.aekGoals) ? saved.aekGoals : 0,
+    oppGoals: saved ? (Number.isFinite(saved.oppGoals) ? saved.oppGoals : oppGoals) : 0,
+  };
 
-  console.log(`[${leagueSlug}] Τρέχον σκορ ΑΕΚ: ${aekGoals}, προηγούμενο γνωστό: ${prevState.aekGoals}`);
+  console.log(
+    `[${leagueSlug}] Σκορ ΑΕΚ-αντίπαλος: ${aekGoals}-${oppGoals}, προηγούμενο γνωστό: ${prevState.aekGoals}-${prevState.oppGoals}`
+  );
 
-  if (aekGoals > prevState.aekGoals) {
-    // Στέλνουμε ένα push ΑΝΑ νέο γκολ (καλύπτει και την περίπτωση 2 γκολ μεταξύ 2 ελέγχων)
-    for (let g = prevState.aekGoals + 1; g <= aekGoals; g++) {
-      const dedupKey = `aek-goal-sent-${aekEvent.id}-${g}`;
+  const clock = competition.status.displayClock;
+  const opponentName = opponent.team.shortDisplayName || opponent.team.displayName;
+  const scoreLine = `${aekGoals}-${oppGoals}`;
+
+  const sides = [
+    {
+      kind: "ΑΕΚ",
+      current: aekGoals,
+      previous: prevState.aekGoals,
+      keyPrefix: "aek-goal-sent",
+      title: "ΓΚΟΛ ΑΕΚ! ⚽🟡⚫",
+    },
+    {
+      kind: "αντίπαλος",
+      current: oppGoals,
+      previous: prevState.oppGoals,
+      keyPrefix: "aek-conceded-sent",
+      title: "Γκολ αντιπάλου 😕",
+    },
+  ];
+
+  for (const side of sides) {
+    // Ένα push ΑΝΑ νέο γκολ (καλύπτει και την περίπτωση 2 γκολ μεταξύ 2 ελέγχων)
+    for (let g = side.previous + 1; g <= side.current; g++) {
+      const dedupKey = `${side.keyPrefix}-${aekEvent.id}-${g}`;
       const claimed = await claimOnce(dedupKey);
       if (!claimed) {
-        console.log(`[${leagueSlug}] Το γκολ #${g} είχε ήδη σταλεί από άλλο run, παραλείπεται.`);
+        console.log(`[${leagueSlug}] Το γκολ #${g} (${side.kind}) είχε ήδη σταλεί, παραλείπεται.`);
         continue;
       }
-      const scoreLine = `${aekCompetitor.score}-${opponent.score}`;
-      const clock = competition.status.displayClock;
-      const opponentName = opponent.team.shortDisplayName || opponent.team.displayName;
-      const ok = await sendGoalPush("ΓΚΟΛ ΑΕΚ! ⚽🟡⚫", `ΑΕΚ ${scoreLine} ${opponentName} (${clock})`);
+      const ok = await sendGoalPush(side.title, `ΑΕΚ ${scoreLine} ${opponentName} (${clock})`);
       if (!ok) {
         // Δεν στάλθηκε: ελευθερώνουμε το κλείδωμα και ΔΕΝ ενημερώνουμε το state,
         // ώστε το επόμενο run (σε 2 λεπτά) να ξαναδοκιμάσει το ίδιο γκολ.
-        console.error(`[${leagueSlug}] Goal push FAILED for goal #${g} — θα ξαναδοκιμάσει στο επόμενο run.`);
+        console.error(`[${leagueSlug}] Push FAILED για γκολ #${g} (${side.kind}) — θα ξαναδοκιμάσει στο επόμενο run.`);
         await releaseClaim(dedupKey);
         return;
       }
-      console.log(`[${leagueSlug}] Goal push sent for goal #${g}:`, scoreLine);
+      console.log(`[${leagueSlug}] Push sent για γκολ #${g} (${side.kind}):`, scoreLine);
     }
   }
 
-  await upstashSet(stateKey, { aekGoals });
+  await upstashSet(stateKey, { aekGoals, oppGoals });
 }
 
 // Καλύπτει ΟΠΟΙΑΔΗΠΟΤΕ διοργάνωση (π.χ. Κύπελλο) που δεν καλύπτεται από τη λίστα LEAGUES.
