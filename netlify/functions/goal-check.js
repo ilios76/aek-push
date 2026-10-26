@@ -87,6 +87,55 @@ async function releaseClaim(dedupKey) {
   }
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function clockSeconds(play) {
+  const value = play && play.clock ? Number(play.clock.value) : NaN;
+  return Number.isFinite(value) ? value : 0;
+}
+
+// Τα γκολ του αγώνα (ESPN "details") για την ΑΕΚ ή τον αντίπαλο, με σειρά χρόνου.
+// Υποθέτουμε ότι στα αυτογκόλ το ESPN δίνει την ομάδα του παίκτη που το έβαλε.
+// Αν δεν ισχύει, απλά δεν θα βρεθεί σκόρερ και το μήνυμα θα φύγει χωρίς όνομα.
+function scoringPlaysFor(competition, side) {
+  const details = Array.isArray(competition && competition.details) ? competition.details : [];
+  return details
+    .filter((d) => d && d.scoringPlay && !d.shootout && d.team && d.team.id != null)
+    .filter((d) => {
+      const isAekPlayer = String(d.team.id) === AEK_ESPN_ID;
+      const creditedToAek = d.ownGoal ? !isAekPlayer : isAekPlayer;
+      return side === "ΑΕΚ" ? creditedToAek : !creditedToAek;
+    })
+    .sort((a, b) => clockSeconds(a) - clockSeconds(b));
+}
+
+function describeScorer(play) {
+  if (!play) return null;
+  const athlete = Array.isArray(play.athletesInvolved) ? play.athletesInvolved[0] : null;
+  const name = athlete && (athlete.displayName || athlete.fullName || athlete.shortName);
+  if (!name) return null;
+  const tag = play.ownGoal ? " (αυτογκόλ)" : play.penaltyKick ? " (πέναλτι)" : "";
+  return {
+    name: name + tag,
+    minute: play.clock && play.clock.displayValue ? play.clock.displayValue : null,
+  };
+}
+
+// Ξαναδιαβάζει τον αγώνα (αν το όνομα του σκόρερ δεν έχει εμφανιστεί ακόμα στο ESPN)
+async function fetchCompetition(leagueSlug, eventId) {
+  try {
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/${leagueSlug}/scoreboard`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const ev = (data.events || []).find((e) => String(e.id) === String(eventId));
+    return ev ? ev.competitions[0] : null;
+  } catch (err) {
+    return null;
+  }
+}
+
 async function checkLeague(leagueSlug) {
   const res = await fetch(
     `https://site.api.espn.com/apis/site/v2/sports/soccer/${leagueSlug}/scoreboard`
@@ -155,7 +204,21 @@ async function checkLeague(leagueSlug) {
     },
   ];
 
+  // Αν υπάρχει νέο γκολ αλλά το ESPN δεν έχει βάλει ακόμα τον σκόρερ, περιμένουμε
+  // λίγο και ξαναδιαβάζουμε (μία φορά ανά run) πριν στείλουμε.
+  let comp = competition;
+  const missingScorers = () =>
+    sides.some(
+      (side) => side.current > side.previous && scoringPlaysFor(comp, side.kind).length < side.current
+    );
+  if (missingScorers()) {
+    await sleep(5000);
+    const fresh = await fetchCompetition(leagueSlug, aekEvent.id);
+    if (fresh) comp = fresh;
+  }
+
   for (const side of sides) {
+    const plays = scoringPlaysFor(comp, side.kind);
     // Ένα push ΑΝΑ νέο γκολ (καλύπτει και την περίπτωση 2 γκολ μεταξύ 2 ελέγχων)
     for (let g = side.previous + 1; g <= side.current; g++) {
       const dedupKey = `${side.keyPrefix}-${aekEvent.id}-${g}`;
@@ -164,7 +227,18 @@ async function checkLeague(leagueSlug) {
         console.log(`[${leagueSlug}] Το γκολ #${g} (${side.kind}) είχε ήδη σταλεί, παραλείπεται.`);
         continue;
       }
-      const ok = await sendGoalPush(side.title, `ΑΕΚ ${scoreLine} ${opponentName} (${clock})`);
+
+      const scorer = describeScorer(plays[g - 1]);
+      console.log(
+        `[${leagueSlug}] Σκόρερ για γκολ #${g} (${side.kind}):`,
+        scorer ? scorer.name : "δεν βρέθηκε",
+        `(γκολ στο ESPN: ${plays.length}/${side.current})`
+      );
+      const message = scorer
+        ? `${scorer.name} (${scorer.minute || clock}) · ΑΕΚ ${scoreLine} ${opponentName}`
+        : `ΑΕΚ ${scoreLine} ${opponentName} (${clock})`;
+
+      const ok = await sendGoalPush(side.title, message);
       if (!ok) {
         // Δεν στάλθηκε: ελευθερώνουμε το κλείδωμα και ΔΕΝ ενημερώνουμε το state,
         // ώστε το επόμενο run (σε 2 λεπτά) να ξαναδοκιμάσει το ίδιο γκολ.
