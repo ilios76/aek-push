@@ -4,6 +4,9 @@ const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const AEK_ESPN_ID = "887";
 
+// Η ειδοποίηση "Έχει ΑΕΚ σήμερα" δεν στέλνεται πριν από αυτή την ώρα (ώρα Ελλάδας)
+const MATCHDAY_EARLIEST_HOUR = 9;
+
 // Διοργανώσεις που ελέγχουμε κάθε φορά (ESPN slugs)
 const LEAGUES = ["gre.1", "uefa.champions"];
 
@@ -35,7 +38,7 @@ async function upstashSet(key, value) {
 // Επιστρέφει true μόνο την πρώτη φορά που καλείται για το συγκεκριμένο dedupKey
 // (χρησιμοποιεί SET ... NX -> ατομική "κλείδωση" ώστε ταυτόχρονα/επικαλυπτόμενα
 // runs να μη στείλουν ποτέ το ίδιο γκολ δύο φορές, ό,τι κι αν συμβεί με το άλλο state)
-async function claimOnce(dedupKey) {
+async function claimOnce(dedupKey, ttlSeconds = 900) {
   // Ολόκληρη η εντολή σαν JSON array στο body (ο τεκμηριωμένος τρόπος του Upstash REST)
   const res = await fetch(UPSTASH_URL, {
     method: "POST",
@@ -43,7 +46,7 @@ async function claimOnce(dedupKey) {
       Authorization: `Bearer ${UPSTASH_TOKEN}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(["SET", dedupKey, "1", "NX", "EX", 900]), // 15 λεπτά
+    body: JSON.stringify(["SET", dedupKey, "1", "NX", "EX", ttlSeconds]),
   });
   const json = await res.json();
   if (json.error) {
@@ -136,6 +139,52 @@ async function fetchCompetition(leagueSlug, eventId) {
   }
 }
 
+// Ημερομηνία / ώρα στην Ελλάδα (αυτόματα καλοκαιρινή/χειμερινή ώρα)
+function athensDay(date) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(date); // π.χ. 2026-10-20
+}
+function athensHour(date) {
+  return Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Athens", hour: "2-digit", hourCycle: "h23" }).format(date)
+  );
+}
+function athensTime(date) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Athens",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date); // π.χ. 20:00
+}
+
+// Στέλνει ΜΙΑ φορά ανά αγώνα την ειδοποίηση "Έχει ΑΕΚ σήμερα: ..."
+async function announceMatchDay(leagueSlug, aekEvent, competition, now = new Date()) {
+  const kickoff = new Date(aekEvent.date || competition.date);
+  if (Number.isNaN(kickoff.getTime())) return;
+  if (kickoff <= now) return; // ο αγώνας έχει ήδη ξεκινήσει
+  if (athensDay(kickoff) !== athensDay(now)) return; // δεν είναι σημερινός
+  if (athensHour(now) < MATCHDAY_EARLIEST_HOUR) return; // όχι νωρίς το πρωί
+
+  const dedupKey = `aek-matchday-sent-${aekEvent.id}`;
+  const claimed = await claimOnce(dedupKey, 24 * 60 * 60);
+  if (!claimed) return; // έχει ήδη σταλεί
+
+  const competitors = competition.competitors || [];
+  const home = competitors.find((c) => c.homeAway === "home") || competitors[0];
+  const away = competitors.find((c) => c.homeAway === "away") || competitors[1];
+  const nameOf = (c) =>
+    String(c.team.id) === AEK_ESPN_ID ? "ΑΕΚ" : c.team.shortDisplayName || c.team.displayName;
+
+  const body = `${nameOf(home)} - ${nameOf(away)}, στις ${athensTime(kickoff)}`;
+  const ok = await sendGoalPush("Έχει ΑΕΚ σήμερα 🟡⚫", body);
+  if (!ok) {
+    console.error(`[${leagueSlug}] Η ειδοποίηση "Έχει ΑΕΚ σήμερα" απέτυχε — θα ξαναδοκιμάσει στο επόμενο run.`);
+    await releaseClaim(dedupKey);
+    return;
+  }
+  console.log(`[${leagueSlug}] Στάλθηκε "Έχει ΑΕΚ σήμερα": ${body}`);
+}
+
 async function checkLeague(leagueSlug) {
   const res = await fetch(
     `https://site.api.espn.com/apis/site/v2/sports/soccer/${leagueSlug}/scoreboard`
@@ -156,6 +205,10 @@ async function checkLeague(leagueSlug) {
   const state = competition.status.type.state; // "pre" | "in" | "post"
 
   console.log(`[${leagueSlug}] Βρέθηκε αγώνας ΑΕΚ, status: ${state}`);
+
+  if (state === "pre") {
+    await announceMatchDay(leagueSlug, aekEvent, competition);
+  }
 
   if (state !== "in") return;
 
