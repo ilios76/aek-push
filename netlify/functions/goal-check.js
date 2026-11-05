@@ -185,6 +185,36 @@ async function announceMatchDay(leagueSlug, aekEvent, competition, now = new Dat
   console.log(`[${leagueSlug}] Στάλθηκε "Έχει ΑΕΚ σήμερα": ${body}`);
 }
 
+// Ο αγώνας τελείωσε πρόσφατα (το ESPN κρατάει στη λίστα και παλιότερα αποτελέσματα)
+// και όντως παίχτηκε (όχι αναβολή/ακύρωση).
+function finishedRecently(aekEvent, competition, now = new Date()) {
+  const type = (competition.status && competition.status.type) || {};
+  if (type.completed === false) return false;
+  if (/POSTPONED|CANCEL|ABANDON|SUSPEND|DELAY/i.test(type.name || "")) return false;
+  const kickoff = new Date(aekEvent.date || competition.date);
+  if (Number.isNaN(kickoff.getTime())) return false;
+  const hoursSinceKickoff = (now - kickoff) / 3600000;
+  return hoursSinceKickoff >= 0 && hoursSinceKickoff <= 6;
+}
+
+// Στέλνει ΜΙΑ φορά ανά αγώνα την πρόσκληση να ψηφίσουν MVP στο Live Tracker
+async function announceMvpPoll(leagueSlug, aekEvent, aekGoals, oppGoals, opponentName) {
+  const dedupKey = `aek-mvp-sent-${aekEvent.id}`;
+  const claimed = await claimOnce(dedupKey, 24 * 60 * 60);
+  if (!claimed) return; // έχει ήδη σταλεί
+
+  const ok = await sendGoalPush(
+    `Τελικό: ΑΕΚ ${aekGoals}-${oppGoals} ${opponentName}`,
+    "Ψηφίστε τον MVP του σημερινού αγώνα στην ενότητα Live Tracker"
+  );
+  if (!ok) {
+    console.error(`[${leagueSlug}] Η ειδοποίηση MVP απέτυχε — θα ξαναδοκιμάσει στο επόμενο run.`);
+    await releaseClaim(dedupKey);
+    return;
+  }
+  console.log(`[${leagueSlug}] Στάλθηκε η ειδοποίηση MVP (τελικό ${aekGoals}-${oppGoals}).`);
+}
+
 async function checkLeague(leagueSlug) {
   const res = await fetch(
     `https://site.api.espn.com/apis/site/v2/sports/soccer/${leagueSlug}/scoreboard`
@@ -208,9 +238,13 @@ async function checkLeague(leagueSlug) {
 
   if (state === "pre") {
     await announceMatchDay(leagueSlug, aekEvent, competition);
+    return;
   }
 
-  if (state !== "in") return;
+  if (state !== "in" && state !== "post") return;
+
+  const isPost = state === "post";
+  if (isPost && !finishedRecently(aekEvent, competition)) return;
 
   const aekCompetitor = competition.competitors.find((c) => c.team.id === AEK_ESPN_ID);
   const opponent = competition.competitors.find((c) => c.team.id !== AEK_ESPN_ID);
@@ -227,10 +261,15 @@ async function checkLeague(leagueSlug) {
   // Πρώτο run του αγώνα: ξεκινάμε από 0-0. Αν υπάρχει state χωρίς "oppGoals"
   // (π.χ. έγινε deploy στη μέση αγώνα), παίρνουμε ως αφετηρία το τρέχον σκορ του
   // αντιπάλου, ώστε να μη σταλούν ξαφνικά ειδοποιήσεις για γκολ που έχουν ήδη πέσει.
-  const prevState = {
-    aekGoals: saved && Number.isFinite(saved.aekGoals) ? saved.aekGoals : 0,
-    oppGoals: saved ? (Number.isFinite(saved.oppGoals) ? saved.oppGoals : oppGoals) : 0,
-  };
+  // Αν ο αγώνας έχει ήδη τελειώσει και δεν τον παρακολουθούσαμε ζωντανά (δεν υπάρχει state),
+  // δεν στέλνουμε γκολ — αλλιώς θα έφευγαν όλα μαζί.
+  const untrackedFinished = isPost && !saved;
+  const prevState = untrackedFinished
+    ? { aekGoals, oppGoals }
+    : {
+        aekGoals: saved && Number.isFinite(saved.aekGoals) ? saved.aekGoals : 0,
+        oppGoals: saved ? (Number.isFinite(saved.oppGoals) ? saved.oppGoals : oppGoals) : 0,
+      };
 
   console.log(
     `[${leagueSlug}] Σκορ ΑΕΚ-αντίπαλος: ${aekGoals}-${oppGoals}, προηγούμενο γνωστό: ${prevState.aekGoals}-${prevState.oppGoals}`
@@ -304,6 +343,11 @@ async function checkLeague(leagueSlug) {
   }
 
   await upstashSet(stateKey, { aekGoals, oppGoals });
+
+  // Μετά το τέλος του αγώνα (και αφού έχουν σταλεί τυχόν τελευταία γκολ): πρόσκληση για MVP
+  if (isPost) {
+    await announceMvpPoll(leagueSlug, aekEvent, aekGoals, oppGoals, opponentName);
+  }
 }
 
 // Καλύπτει ΟΠΟΙΑΔΗΠΟΤΕ διοργάνωση (π.χ. Κύπελλο) που δεν καλύπτεται από τη λίστα LEAGUES.
