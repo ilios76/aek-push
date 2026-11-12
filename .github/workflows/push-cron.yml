@@ -3,11 +3,6 @@ name: Push Notifications Cron
 on:
   schedule:
     - cron: "0 0 * * *"
-    - cron: "0 1 * * *"
-    - cron: "0 2 * * *"
-    - cron: "0 3 * * *"
-    - cron: "0 4 * * *"
-    - cron: "0 6 * * *"
     - cron: "0 8 * * *"
     - cron: "0 10 * * *"
     - cron: "0 12 * * *"
