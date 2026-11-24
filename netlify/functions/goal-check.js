@@ -7,6 +7,18 @@ const AEK_ESPN_ID = "887";
 // Η ειδοποίηση "Έχει ΑΕΚ σήμερα" δεν στέλνεται πριν από αυτή την ώρα (ώρα Ελλάδας)
 const MATCHDAY_EARLIEST_HOUR = 9;
 
+// Μπάσκετ / Χάντμπολ / Βόλεϊ: το πρόγραμμα έρχεται από το SportAPI7 (RapidAPI),
+// το ίδιο API που χρησιμοποιεί το Live Tracker. Το key μπαίνει ΜΟΝΟ ως environment
+// variable στο Netlify (RAPIDAPI_KEY), ποτέ μέσα στον κώδικα.
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
+const SPORTAPI_HOST = "sportapi7.p.rapidapi.com";
+const OTHER_SPORTS = [
+  { key: "basketball", label: "Μπάσκετ", teamId: 3502 },
+  { key: "handball", label: "Χάντμπολ", teamId: 36725 },
+  { key: "volleyball", label: "Βόλεϊ", teamId: 52460 },
+];
+let otherSportsCheckedDay = null; // να μη ρωτάμε το Upstash σε κάθε run, αφού έχει γίνει ο έλεγχος της ημέρας
+
 // Διοργανώσεις που ελέγχουμε κάθε φορά (ESPN slugs)
 const LEAGUES = ["gre.1", "uefa.champions"];
 
@@ -183,6 +195,83 @@ async function announceMatchDay(leagueSlug, aekEvent, competition, now = new Dat
     return;
   }
   console.log(`[${leagueSlug}] Στάλθηκε "Έχει ΑΕΚ σήμερα": ${body}`);
+}
+
+// ---------- "Έχει ΑΕΚ σήμερα" για Μπάσκετ / Χάντμπολ / Βόλεϊ ----------
+
+async function fetchNextEvents(teamId) {
+  const res = await fetch(`https://${SPORTAPI_HOST}/api/v1/team/${teamId}/events/next/0`, {
+    headers: { "X-RapidAPI-Key": RAPIDAPI_KEY, "X-RapidAPI-Host": SPORTAPI_HOST },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data.events) ? data.events : [];
+}
+
+async function announceSportMatch(sport, ev, start) {
+  const dedupKey = `aek-matchday-sent-${sport.key}-${ev.id}`;
+  const claimed = await claimOnce(dedupKey, 24 * 60 * 60);
+  if (!claimed) return; // έχει ήδη σταλεί
+
+  const nameOf = (team) =>
+    team && Number(team.id) === sport.teamId ? "ΑΕΚ" : (team && (team.shortName || team.name)) || "?";
+  const body = `${nameOf(ev.homeTeam)} - ${nameOf(ev.awayTeam)}, στις ${athensTime(start)}`;
+
+  const ok = await sendGoalPush(`Έχει ΑΕΚ σήμερα (${sport.label}) 🟡⚫`, body);
+  if (!ok) {
+    console.error(`[${sport.label}] Η ειδοποίηση "Έχει ΑΕΚ σήμερα" απέτυχε — θα ξαναδοκιμάσει στο επόμενο run.`);
+    await releaseClaim(dedupKey);
+    return;
+  }
+  console.log(`[${sport.label}] Στάλθηκε "Έχει ΑΕΚ σήμερα": ${body}`);
+}
+
+// Μία φορά την ημέρα (μετά τις 09:00 ώρα Ελλάδας) ρωτάει το API για τα επόμενα
+// παιχνίδια της ΑΕΚ σε κάθε άθλημα και ειδοποιεί αν υπάρχει σημερινός αγώνας.
+async function announceOtherSportsToday(now = new Date()) {
+  if (!RAPIDAPI_KEY) return; // δεν έχει ρυθμιστεί το key στο Netlify
+  if (athensHour(now) < MATCHDAY_EARLIEST_HOUR) return;
+  const day = athensDay(now);
+  if (otherSportsCheckedDay === day) return;
+
+  const gateKey = `aek-sportcheck-${day}`;
+  const gate = await claimOnce(gateKey, 24 * 60 * 60);
+  if (!gate) {
+    // Ο έλεγχος της ημέρας έχει ήδη γίνει (ή περιμένει επανάληψη μετά από αποτυχία)
+    return;
+  }
+
+  let anyFailed = false;
+  for (const sport of OTHER_SPORTS) {
+    try {
+      const events = await fetchNextEvents(sport.teamId);
+      const todays = events.filter((ev) => {
+        if (!ev || !ev.startTimestamp) return false;
+        const start = new Date(ev.startTimestamp * 1000);
+        const statusType = ev.status && ev.status.type;
+        return (
+          athensDay(start) === day &&
+          start > now &&
+          !["canceled", "postponed", "finished", "inprogress"].includes(statusType)
+        );
+      });
+      console.log(`[${sport.label}] Επόμενοι αγώνες στο API: ${events.length}, σημερινοί: ${todays.length}`);
+      for (const ev of todays) {
+        await announceSportMatch(sport, ev, new Date(ev.startTimestamp * 1000));
+      }
+    } catch (err) {
+      anyFailed = true;
+      console.error(`[${sport.label}] Αποτυχία ελέγχου προγράμματος: ${err.message}`);
+    }
+  }
+
+  if (anyFailed) {
+    // Νέα προσπάθεια σε 30 λεπτά (οι ειδοποιήσεις που έχουν ήδη σταλεί δεν επαναλαμβάνονται)
+    await releaseClaim(gateKey);
+    await claimOnce(gateKey, 30 * 60);
+  } else {
+    otherSportsCheckedDay = day;
+  }
 }
 
 // Ο αγώνας τελείωσε πρόσφατα (το ESPN κρατάει στη λίστα και παλιότερα αποτελέσματα)
@@ -424,6 +513,11 @@ const handler = async () => {
     } catch (err) {
       console.error(`Σφάλμα στη λίγκα ${league}:`, err.message);
     }
+  }
+  try {
+    await announceOtherSportsToday();
+  } catch (err) {
+    console.error("Σφάλμα στον έλεγχο των άλλων αθλημάτων:", err.message);
   }
   await checkSofascore();
   return { statusCode: 200 };
