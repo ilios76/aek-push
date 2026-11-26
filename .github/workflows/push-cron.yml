@@ -2,18 +2,20 @@ name: Push Notifications Cron
 
 on:
   schedule:
-    - cron: "0 0 * * *"
-    - cron: "0 8 * * *"
     - cron: "0 10 * * *"
-    - cron: "0 12 * * *"
-    - cron: "0 14 * * *"
-    - cron: "0 16 * * *"
-    - cron: "30 17 * * *"
+    - cron: "0 18 * * *"
+    - cron: "0 20 * * *"
+    - cron: "0 22 * * *"
+    - cron: "0 0 * * *"
+    - cron: "0 2 * * *"
+    - cron: "30 3 * * *"
+
   workflow_dispatch:
 
 jobs:
   trigger-push:
     runs-on: ubuntu-latest
+
     steps:
       - name: Call Netlify Function
         run: |
