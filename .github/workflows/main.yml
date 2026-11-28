@@ -2,10 +2,10 @@ name: Run Netlify Push Function
 
 on:
   schedule:
-    - cron: "30 8 * * *"
+   
     - cron: "0 12 * * *"
-    - cron: "0 17 * * *"
-    - cron: "15 21 * * *"
+
+    
   workflow_dispatch:
 
 jobs:
